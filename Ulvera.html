@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ulvera – Burnout Risk Prototype (Interactive)</title>
+<meta name="description" content="Ulvera burnout risk dashboard – enter values, change ratings, see real-time score." />
+<style>
+/* =============================================================
+   Ulvera Burnout Prototype (Interactive Barebones)
+   -------------------------------------------------------------
+   NEW IN THIS VERSION
+   • Real-time re-scoring from Weekly Pulse radios + Meaning slider.
+   • Optional direct manual overrides in each domain card (0-100).
+   • Gauge + domain bars auto-update; risk color thresholds.
+   • Lightweight; no build tooling; pure HTML/CSS/vanilla JS.
+   ============================================================= */
+:root {
+  --c-bg: #f8f9fa;
+  --c-bg-card: #ffffff;
+  --c-bg-card-dark: #1e1e1e;
+  --c-text: #1a1a1a;
+  --c-text-muted: #6b7280;
+  --c-border: #e5e7eb;
+  --c-brand: #2563eb;
+  --c-brand-light: #60a5fa;
+  --radius: 12px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+  --transition-fast: 150ms;
+  --risk-good: #16a34a;
+  --risk-med: #f59e0b;
+  --risk-high: #dc2626;
+  --risk-bg: #e5e7eb;
+  font-size: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-bg: #111827;
+    --c-bg-card: var(--c-bg-card-dark);
+    --c-text: #f9fafb;
+    --c-text-muted: #9ca3af;
+    --c-border: #374151;
+    --risk-bg: #374151;
+  }
+  body {color-scheme: dark;}
+}
+html,body{margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;background:var(--c-bg);color:var(--c-text);} 
+.wrapper{max-width:1200px;margin-inline:auto;padding:1rem;display:grid;grid-template-columns:1fr;grid-row-gap:1.5rem;}
+@media (min-width:768px){.wrapper{grid-template-columns:200px 1fr;grid-column-gap:2rem;grid-row-gap:2rem;}}
+.sidebar{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:.5rem;}
+@media (min-width:768px){.sidebar{position:sticky;top:1rem;align-self:start;flex-direction:column;justify-content:flex-start;}}
+.logo{font-weight:700;font-size:1.25rem;color:var(--c-brand);}
+.sidebar .user{font-size:.875rem;color:var(--c-text-muted);} 
+.sidebar-nav{display:flex;gap:.5rem;}
+.sidebar-nav button{padding:.375rem .75rem;border-radius:var(--radius);border:1px solid var(--c-border);background:var(--c-bg-card);cursor:pointer;font-size:.75rem;}
+.sidebar-nav button:hover{border-color:var(--c-brand);color:var(--c-brand);} 
+.header{display:flex;flex-direction:column;gap:.25rem;}
+.header h1{margin:0;font-size:1.5rem;line-height:1.2;font-weight:600;}
+.header .subtitle{font-size:.95rem;color:var(--c-text-muted);} 
+.gauge-wrapper{display:flex;align-items:center;justify-content:center;padding:1rem;background:var(--c-bg-card);border-radius:var(--radius);box-shadow:var(--shadow);}
+.gauge{width:220px;height:110px;position:relative;}
+.gauge svg{width:100%;height:100%;display:block;}
+.gauge .needle{position:absolute;left:50%;bottom:0;width:2px;height:100px;background:var(--c-text);transform-origin:bottom center;transform:rotate(calc(var(--angle,0deg)));transition:transform var(--transition-fast) ease-out;}
+.gauge .score{position:absolute;top:50%;left:50%;transform:translate(-50%,-10%);font-size:1.75rem;font-weight:700;}
+.gauge .score-label{position:absolute;top:72%;left:50%;transform:translateX(-50%);font-size:.75rem;color:var(--c-text-muted);} 
+.domains{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:1rem;}
+.domain-card{background:var(--c-bg-card);border:1px solid var(--c-border);border-radius:var(--radius);padding:1rem;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:.75rem;position:relative;}
+.domain-card h3{margin:0;font-size:1.05rem;font-weight:600;}
+.domain-card .desc{font-size:.85rem;color:var(--c-text-muted);min-height:3.5em;}
+.domain-metric{display:flex;align-items:center;gap:.5rem;}
+.domain-metric .metric-val{font-size:1.5rem;font-weight:700;min-width:3ch;text-align:right;}
+.domain-metric .metric-unit{font-size:.875rem;color:var(--c-text-muted);}
+.domain-bar{height:8px;width:100%;background:var(--risk-bg);border-radius:4px;overflow:hidden;position:relative;}
+.domain-bar::after{content:"";position:absolute;inset:0;width:var(--pct,0%);background:var(--risk-good);transition:width var(--transition-fast) ease-out,background var(--transition-fast) ease-out;}
+.domain-card[data-risk="low"] .domain-bar::after{background:var(--risk-good);} 
+.domain-card[data-risk="med"] .domain-bar::after{background:var(--risk-med);} 
+.domain-card[data-risk="high"] .domain-bar::after{background:var(--risk-high);} 
+.trend{font-size:.75rem;line-height:1;position:absolute;top:.75rem;right:.75rem;padding:.125rem .375rem;border-radius:var(--radius);border:1px solid var(--c-border);color:var(--c-text-muted);} 
+.domain-card[data-trend="up"] .trend{color:var(--risk-high);border-color:var(--risk-high);} 
+.domain-card[data-trend="down"] .trend{color:var(--risk-good);border-color:var(--risk-good);} 
+/* manual override input */
+.domain-input-wrap{display:flex;align-items:center;gap:.25rem;font-size:.75rem;color:var(--c-text-muted);}
+.domain-input-wrap input{width:60px;padding:.125rem .25rem;font-size:.75rem;border:1px solid var(--c-border);border-radius:var(--radius);background:var(--c-bg);color:inherit;}
+.pulse{background:var(--c-bg-card);border:1px solid var(--c-border);border-radius:var(--radius);box-shadow:var(--shadow);padding:1rem;display:grid;gap:1rem;max-width:600px;margin-inline:auto;}
+.pulse h2{margin:0;font-size:1.25rem;font-weight:600;}
+.pulse-question{display:grid;gap:.25rem;}
+.pulse-scale{display:flex;gap:.25rem;align-items:center;}
+.pulse-scale input[type="radio"]{display:none;}
+.pulse-scale label{flex:1;text-align:center;padding:.5rem .25rem;font-size:.85rem;border-radius:var(--radius);border:1px solid var(--c-border);cursor:pointer;user-select:none;}
+.pulse-scale input[type="radio"]:checked + label{background:var(--c-brand-light);border-color:var(--c-brand);color:#fff;font-weight:600;}
+.pulse-meaning{width:100%;}
+.pulse-meaning-output{font-size:.875rem;text-align:right;color:var(--c-text-muted);} 
+.calc-mode{margin-top:.5rem;font-size:.75rem;color:var(--c-text-muted);}
+.calc-mode input{margin-right:.25rem;}
+.footer{margin-top:2rem;padding:2rem 1rem;font-size:.75rem;color:var(--c-text-muted);text-align:center;}
+.footer a{color:var(--c-brand);text-decoration:none;}
+.footer a:hover{text-decoration:underline;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
+.flex{display:flex;}
+.flex-col{display:flex;flex-direction:column;}
+.gap-sm{gap:.5rem;}
+.gap-md{gap:1rem;}
+.text-center{text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <!-- Sidebar -------------------------------------------------- -->
+  <aside class="sidebar" aria-label="App navigation">
+    <div class="logo" aria-label="Ulvera home">Ulvera</div>
+    <div class="user">Logged in: <strong>Student A</strong></div>
+    <nav class="sidebar-nav" aria-label="Secondary navigation">
+      <button type="button">Dashboard</button>
+      <button type="button">Pulse</button>
+      <button type="button">Settings</button>
+    </nav>
+  </aside>
+
+  <!-- Main Content --------------------------------------------- -->
+  <main class="main" aria-live="polite">
+    <header class="header">
+      <h1>Your Energy & Learning Load</h1>
+      <p class="subtitle">Enter or tap weekly pulse questions below. Scores update live.</p>
+    </header>
+
+    <!-- Overall Gauge -->
+    <section class="gauge-wrapper" aria-labelledby="overall-gauge-label">
+      <h2 id="overall-gauge-label" class="sr-only">Overall Burnout Risk Gauge</h2>
+      <div class="gauge" id="overall-gauge" data-score="42" data-risk="med" style="--angle:42deg;">
+        <svg viewBox="0 0 100 50" role="img" aria-label="Gauge showing burnout risk">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#16a34a" />
+              <stop offset="50%" stop-color="#f59e0b" />
+              <stop offset="100%" stop-color="#dc2626" />
+            </linearGradient>
+          </defs>
+          <path d="M5,50 A45,45 0 0,1 95,50" fill="none" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round" />
+        </svg>
+        <div class="needle" id="overall-needle"></div>
+        <div class="score" id="overall-score" aria-hidden="true">42</div>
+        <div class="score-label" id="overall-label" aria-hidden="true">Moderate</div>
+      </div>
+    </section>
+
+    <!-- Domain Cards Grid -->
+    <section class="domains" aria-labelledby="domains-label">
+      <h2 id="domains-label" class="sr-only">Domains</h2>
+
+      <!-- Emotional Exhaustion -->
+      <article class="domain-card" id="card-ee" data-risk="med" data-trend="up" style="--pct:58%;" aria-labelledby="d-ee-h">
+        <div class="trend" data-role="trend">↑ 5%</div>
+        <h3 id="d-ee-h">Energy to Socialize?</h3>
+        <p class="desc">After your day of classes &amp; assignments, if a friend asked to talk or work on something, how likely are you to say no because you’re spent?</p>
+        <div class="domain-metric"><span class="metric-val" data-role="metric">58</span><span class="metric-unit">/100</span></div>
+        <div class="domain-bar" role="progressbar" aria-valuenow="58" aria-valuemin="0" aria-valuemax="100"></div>
+        <div class="domain-input-wrap"><label for="input-ee">Set:</label><input id="input-ee" type="number" min="0" max="100" step="1" value="58" /></div>
+      </article>
+
+      <!-- Admin Burden -->
+      <article class="domain-card" id="card-admin" data-risk="high" data-trend="up" style="--pct:70%;" aria-labelledby="d-admin-h">
+        <div class="trend" data-role="trend">↑ 12%</div>
+        <h3 id="d-admin-h">Swamped by Requirements?</h3>
+        <p class="desc">When handling class requirements, how likely are you to get swamped by forms, uploads, or online submissions before you can actually study?</p>
+        <div class="domain-metric"><span class="metric-val" data-role="metric">70</span><span class="metric-unit">/100</span></div>
+        <div class="domain-bar" role="progressbar" aria-valuenow="70" aria-valuemin="0" aria-valuemax="100"></div>
+        <div class="domain-input-wrap"><label for="input-admin">Set:</label><input id="input-admin" type="number" min="0" max="100" step="1" value="70" /></div>
+      </article>
+
+      <!-- Workload -->
+      <article class="domain-card" id="card-workload" data-risk="low" data-trend="down" style="--pct:35%;" aria-labelledby="d-load-h">
+        <div class="trend" data-role="trend">↓ 8%</div>
+        <h3 id="d-load-h">Sleep Cut for Coursework?</h3>
+        <p class="desc">During a typical week of classes, how likely are you to stay up late or cut sleep just to keep up with coursework?</p>
+        <div class="domain-metric"><span class="metric-val" data-role="metric">35</span><span class="metric-unit">/100</span></div>
+        <div class="domain-bar" role="progressbar" aria-valuenow="35" aria-valuemin="0" aria-valuemax="100"></div>
+        <div class="domain-input-wrap"><label for="input-workload">Set:</label><input id="input-workload" type="number" min="0" max="100" step="1" value="35" /></div>
+      </article>
+
+      <!-- Depersonalization -->
+      <article class="domain-card" id="card-dp" data-risk="low" data-trend="flat" style="--pct:22%;" aria-labelledby="d-dp-h">
+        <div class="trend" data-role="trend">→</div>
+        <h3 id="d-dp-h">Checked Out Around Others?</h3>
+        <p class="desc">In group work or dorm conversations, how likely are you to ‘show up’ physically but feel checked out from the people you’re with?</p>
+        <div class="domain-metric"><span class="metric-val" data-role="metric">22</span><span class="metric-unit">/100</span></div>
+        <div class="domain-bar" role="progressbar" aria-valuenow="22" aria-valuemin="0" aria-valuemax="100"></div>
+        <div class="domain-input-wrap"><label for="input-dp">Set:</label><input id="input-dp" type="number" min="0" max="100" step="1" value="22" /></div>
+      </article>
+
+      <!-- Meaning -->
+      <article class="domain-card" id="card-meaning" data-risk="med" data-trend="down" style="--pct:40%;" aria-labelledby="d-meaning-h">
+        <div class="trend" data-role="trend">↓ 3%</div>
+        <h3 id="d-meaning-h">Did It Count?</h3>
+        <p class="desc">After your class/study day, how likely are you to feel you didn’t accomplish anything that counts toward your goals?</p>
+        <div class="domain-metric"><span class="metric-val" data-role="metric">40</span><span class="metric-unit">/100</span></div>
+        <div class="domain-bar" role="progressbar" aria-valuenow="40" aria-valuemin="0" aria-valuemax="100"></div>
+        <div class="domain-input-wrap"><label for="input-meaning">Set:</label><input id="input-meaning" type="number" min="0" max="100" step="1" value="40" /></div>
+      </article>
+
+    </section>
+
+    <!-- Weekly Pulse Form -------------------------------------- -->
+    <section class="pulse" aria-labelledby="pulse-h">
+      <h2 id="pulse-h">Weekly Pulse Check</h2>
+      <form id="pulse-form" action="#" method="post" onsubmit="return false;" aria-describedby="pulse-desc">
+        <p id="pulse-desc" class="sr-only">Rate your experience this past week.</p>
+
+        <!-- EE item -->
+        <div class="pulse-question">
+          <label for="ee-q1">After your day of classes &amp; assignments, if a friend asked to talk or work on something, how likely are you to say no because you’re spent?</label>
+          <div class="pulse-scale" id="ee-q1">
+            <input type="radio" id="ee0" name="ee" value="0" /><label for="ee0">0</label>
+            <input type="radio" id="ee1" name="ee" value="1" /><label for="ee1">1</label>
+            <input type="radio" id="ee2" name="ee" value="2" /><label for="ee2">2</label>
+            <input type="radio" id="ee3" name="ee" value="3" /><label for="ee3">3</label>
+            <input type="radio" id="ee4" name="ee" value="4" /><label for="ee4">4</label>
+            <input type="radio" id="ee5" name="ee" value="5" /><label for="ee5">5</label>
+            <input type="radio" id="ee6" name="ee" value="6" /><label for="ee6">6</label>
+          </div>
+        </div>
+
+        <!-- Admin burden item -->
+        <div class="pulse-question">
+          <label for="admin-q1">When handling class requirements, how likely are you to get swamped by forms, uploads, or online submissions before you can actually study?</label>
+          <div class="pulse-scale" id="admin-q1">
+            <input type="radio" id="ad0" name="admin" value="0" /><label for="ad0">0</label>
+            <input type="radio" id="ad1" name="admin" value="1" /><label for="ad1">1</label>
+            <input type="radio" id="ad2" name="admin" value="2" /><label for="ad2">2</label>
+            <input type="radio" id="ad3" name="admin" value="3" /><label for="ad3">3</label>
+            <input type="radio" id="ad4" name="admin" value="4" /><label for="ad4">4</label>
+            <input type="radio" id="ad5" name="admin" value="5" /><label for="ad5">5</label>
+            <input type="radio" id="ad6" name="admin" value="6" /><label for="ad6">6</label>
+          </div>
+        </div>
+
+        <!-- Workload item -->
+        <div class="pulse-question">
+          <label for="wl-q1">During a typical week of classes, how likely are you to stay up late or cut sleep just to keep up with coursework?</label>
+          <div class="pulse-scale" id="wl-q1">
+            <input type="radio" id="wl0" name="workload" value="0" /><label for="wl0">0</label>
+            <input type="radio" id="wl1" name="workload" value="1" /><label for="wl1">1</label>
+            <input type="radio" id="wl2" name="workload" value="2" /><label for="wl2">2</label>
+            <input type="radio" id="wl3" name="workload" value="3" /><label for="wl3">3</label>
+            <input type="radio" id="wl4" name="workload" value="4" /><label for="wl4">4</label>
+            <input type="radio" id="wl5" name="workload" value="5" /><label for="wl5">5</label>
+            <input type="radio" id="wl6" name="workload" value="6" /><label for="wl6">6</label>
+          </div>
+        </div>
+
+        <!-- Depersonalization item -->
+        <div class="pulse-question">
+          <label for="dp-q1">In group work or dorm conversations, how likely are you to ‘show up’ physically but feel checked out from the people you’re with?</label>
+          <div class="pulse-scale" id="dp-q1">
+            <input type="radio" id="dp0" name="dp" value="0" /><label for="dp0">0</label>
+            <input type="radio" id="dp1" name="dp" value="1" /><label for="dp1">1</label>
+            <input type="radio" id="dp2" name="dp" value="2" /><label for="dp2">2</label>
+            <input type="radio" id="dp3" name="dp" value="3" /><label for="dp3">3</label>
+            <input type="radio" id="dp4" name="dp" value="4" /><label for="dp4">4</label>
+            <input type="radio" id="dp5" name="dp" value="5" /><label for="dp5">5</label>
+            <input type="radio" id="dp6" name="dp" value="6" /><label for="dp6">6</label>
+          </div>
+        </div>
+
+        <!-- Meaning % slider -->
+        <div class="pulse-question">
+          <label for="meaning-range">After your class/study day, how likely are you to feel you didn’t accomplish anything that counts toward your goals? (set approximate % of your day that felt meaningful below)<br><span class="pulse-meaning-output" id="meaning-output">40%</span></label>
+          <input type="range" id="meaning-range" class="pulse-meaning" name="meaning_pct" min="0" max="100" step="5" value="40" />
+        </div>
+
+        <div class="calc-mode">
+          <input type="checkbox" id="calc-live" checked /> <label for="calc-live">Recalculate in real time</label>
+        </div>
+
+        <div>
+          <button type="submit" style="padding:.75rem 1.25rem;border-radius:var(--radius);border:none;background:var(--c-brand);color:#fff;font-size:1rem;font-weight:600;cursor:pointer;">Submit Pulse</button>
+        </div>
+      </form>
+    </section>
+
+    <footer class="footer">
+      <p>Ulvera prototype. Demo data only. Not a diagnostic tool.</p>
+      <p><a href="#">Privacy</a> • <a href="#">Terms</a></p>
+    </footer>
+  </main>
+</div>
+
+<script>
+/* =============================================================
+   Ulvera Interactive JS
+   -------------------------------------------------------------
+   • Maintains domain scores in state.
+   • Updates cards + gauge in real time from manual inputs OR Pulse form.
+   • Domain scoring rules (0-100) from Likert 0-6 -> (v/6*100).
+   • Meaning domain is inverse risk: score = 100 - meaning%.
+   • Overall Burnout Risk = weighted sum (EE30, Admin22, Workload18, DP18, Meaning12).
+   ============================================================= */
+(function(){
+  const weights = {ee:0.30, admin:0.22, workload:0.18, dp:0.18, meaning:0.12};
+  const state = {ee:58, admin:70, workload:35, dp:22, meaning:40}; // initial demo values (risk scores 0-100)
+
+  /* ---------- ELEMENT LOOKUPS ---------- */
+  const cards = {
+    ee: document.getElementById('card-ee'),
+    admin: document.getElementById('card-admin'),
+    workload: document.getElementById('card-workload'),
+    dp: document.getElementById('card-dp'),
+    meaning: document.getElementById('card-meaning')
+  };
+  const inputs = {
+    ee: document.getElementById('input-ee'),
+    admin: document.getElementById('input-admin'),
+    workload: document.getElementById('input-workload'),
+    dp: document.getElementById('input-dp'),
+    meaning: document.getElementById('input-meaning')
+  };
+  const gauge = document.getElementById('overall-gauge');
+  const needle = document.getElementById('overall-needle');
+  const scoreEl = document.getElementById('overall-score');
+  const labelEl = document.getElementById('overall-label');
+  const pulseForm = document.getElementById('pulse-form');
+  const meaningRange = document.getElementById('meaning-range');
+  const meaningOutput = document.getElementById('meaning-output');
+  const calcLive = document.getElementById('calc-live');
+
+  /* ---------- HELPERS ---------- */
+  function pctToAngle(p){return (p*1.8)-90;} // map 0-100 to -90..+90
+  function riskLabel(p){if(p<34) return 'Low'; if(p<67) return 'Moderate'; return 'High';}
+  function riskClass(p){if(p<34) return 'low'; if(p<67) return 'med'; return 'high';}
+
+  function updateCard(name){
+    const card = cards[name];
+    if(!card) return;
+    const val = Math.round(state[name]);
+    // update metric text
+    const metricEl = card.querySelector('[data-role="metric"]');
+    if(metricEl) metricEl.textContent = val;
+    // update bar
+    card.style.setProperty('--pct', val+'%');
+    // update aria
+    const bar = card.querySelector('.domain-bar');
+    if(bar){bar.setAttribute('aria-valuenow', val);}
+    // risk color
+    card.dataset.risk = riskClass(val);
+    // sync manual input if not focused
+    const inp = inputs[name];
+    if(inp && document.activeElement !== inp){inp.value = val;}
+  }
+
+  function updateAllCards(){Object.keys(cards).forEach(updateCard);}
+
+  function recomputeOverall(){
+    const total = (state.ee*weights.ee) + (state.admin*weights.admin) + (state.workload*weights.workload) + (state.dp*weights.dp) + (state.meaning*weights.meaning);
+    const score = Math.round(total);
+    scoreEl.textContent = score;
+    const lbl = riskLabel(score);
+    labelEl.textContent = lbl;
+    gauge.dataset.score = score;
+    gauge.dataset.risk = riskClass(score);
+    const ang = pctToAngle(score);
+    needle.style.transform = 'rotate('+ang+'deg)';
+  }
+
+  /* ---------- MANUAL INPUT HANDLERS ---------- */
+  Object.entries(inputs).forEach(([name,inp])=>{
+    if(!inp) return;
+    inp.addEventListener('input',()=>{
+      const v = Number(inp.value);
+      if(!Number.isFinite(v)) return;
+      state[name] = Math.max(0,Math.min(100,v));
+      updateCard(name);
+      recomputeOverall();
+    });
+  });
+
+  /* ---------- PULSE FORM HANDLERS ---------- */
+  function getLikert(name){
+    const checked = pulseForm.querySelector('input[name="'+name+'\"]:checked');
+    if(!checked) return null;
+    const v = Number(checked.value);
+    if(!Number.isFinite(v)) return null;
+    return v;
+  }
+  function calcFromPulse(){
+    // Likert 0-6 -> 0-100 risk
+    const eeLik = getLikert('ee');
+    const adLik = getLikert('admin');
+    const wlLik = getLikert('workload');
+    const dpLik = getLikert('dp');
+    const meaningPct = Number(meaningRange.value); // protective
+    if(eeLik!==null) state.ee = (eeLik/6)*100;
+    if(adLik!==null) state.admin = (adLik/6)*100;
+    if(wlLik!==null) state.workload = (wlLik/6)*100;
+    if(dpLik!==null) state.dp = (dpLik/6)*100;
+    // meaning risk = inverse
+    state.meaning = 100 - meaningPct;
+    updateAllCards();
+    recomputeOverall();
+  }
+
+  pulseForm.addEventListener('submit',calcFromPulse);
+  pulseForm.addEventListener('input',()=>{if(calcLive.checked) calcFromPulse();});
+  meaningRange.addEventListener('input',()=>{meaningOutput.textContent = meaningRange.value + '%';});
+
+  /* ---------- INIT ---------- */
+  updateAllCards();
+  recomputeOverall();
+})();
+</script>
+</body>
+</html>
